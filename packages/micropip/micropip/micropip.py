@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import zipfile
 from typing import Dict, Any, Union, List, Tuple
+from pyodide import to_js
 
 from distlib import markers, util, version
 
@@ -145,7 +146,7 @@ class _PackageManager:
 
         transaction: Dict[str, Any] = {
             "wheels": [],
-            "pyodide_packages": set(),
+            "pyodide_packages": [],
             "locked": dict(self.installed_packages),
         }
         requirement_promises = []
@@ -163,9 +164,11 @@ class _PackageManager:
         if len(pyodide_packages):
             # Note: branch never happens in out-of-browser testing because we
             # report that all dependencies are empty.
-            self.installed_packages.update(dict((k, None) for k in pyodide_packages))
+            self.installed_packages.update(
+                {name: ver for (name, ver) in pyodide_packages}
+            )
             wheel_promises.append(
-                asyncio.ensure_future(pyodide_js.loadPackage(list(pyodide_packages)))
+                asyncio.ensure_future(pyodide_js.loadPackage(to_js(pyodide_packages)))
             )
 
         # Now install PyPI packages
@@ -189,7 +192,8 @@ class _PackageManager:
         if req.name in self.builtin_packages and matcher.match(
             self.builtin_packages[req.name]
         ):
-            transaction["pyodide_packages"].add(req.name)
+            version = self.builtin_packages[req.name]
+            transaction["pyodide_packages"].append((req.name, version))
             return
 
         if req.marker:

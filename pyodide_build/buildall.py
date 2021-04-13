@@ -226,7 +226,6 @@ def build_packages(packages_dir: Path, outputdir: Path, args) -> None:
     libraries = [pkg.name for pkg in pkg_map.values() if pkg.library]
 
     for name, pkg in pkg_map.items():
-        print(pkg)
         if pkg.library:
             continue
         if pkg.shared_library:
