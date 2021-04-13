@@ -128,7 +128,7 @@ class _PackageManager:
 
     def __init__(self):
         if IN_BROWSER:
-            self.builtin_packages = pyodide_js._module.packages.dependencies.to_py()
+            self.builtin_packages = pyodide_js._module.packages.versions.to_py()
         else:
             self.builtin_packages = {}
         self.installed_packages = {}
@@ -183,16 +183,18 @@ class _PackageManager:
 
         req = util.parse_requirement(requirement)
 
+        matcher = self.version_scheme.matcher(req.requirement)
+
         # If it's a Pyodide package, use that instead of the one on PyPI
-        if req.name in self.builtin_packages:
+        if req.name in self.builtin_packages and matcher.match(
+            self.builtin_packages[req.name]
+        ):
             transaction["pyodide_packages"].add(req.name)
             return
 
         if req.marker:
             if not markers.evaluator.evaluate(req.marker, ctx):
                 return
-
-        matcher = self.version_scheme.matcher(req.requirement)
 
         # If we already have something that will work, don't
         # fetch again
