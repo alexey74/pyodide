@@ -170,7 +170,6 @@ def parse_and_compile(
         # handle it with the last_expr code.
         _last_assign_to_expr(mod)
 
-    print("\nsource:", source, "\n")
     # we extract last expression
     if return_mode.startswith("last_expr"):  # last_expr or last_expr_or_assign
         _last_expr_to_raise(mod)
@@ -315,7 +314,7 @@ async def eval_code_async(
     constructor to modify this default behavior.
     """
     flags = flags or ast.PyCF_ALLOW_TOP_LEVEL_AWAIT  # type: ignore
-    code = eval_code(
+    code = _eval_code_get_code(
         source,
         globals=globals,
         locals=locals,
