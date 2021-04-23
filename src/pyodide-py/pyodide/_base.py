@@ -3,16 +3,14 @@ Source code analysis, transformation, compilation, execution.
 """
 
 import ast
-from asyncio import iscoroutine
-from codeop import CommandCompiler, Compile
-import __future__
+from codeop import CommandCompiler, Compile, _features  # type: ignore
+from copy import deepcopy
 from io import StringIO
 from textwrap import dedent
 import tokenize
 from types import CodeType
-from typing import Any, Dict, List, Optional
-
-_features = [getattr(__future__, fname) for fname in __future__.all_feature_names]
+from typing import Any, Dict, Generator, List, Optional
+import builtins
 
 
 class MyCompile(Compile):
@@ -89,6 +87,29 @@ def open_url(url: str) -> StringIO:
     return StringIO(req.response)
 
 
+def parse_and_compile_inner(
+    code: str, *, filename: str, flags: int = 0x0
+) -> Generator[ast.Module, None, Optional[CodeType]]:
+    """
+    Split ``code`` in two parts, everything but last expression and
+    last expresion then compile each part.
+    Returns:
+    --------
+    code object
+        first part's code object (or None)
+    code object
+        last expression's code object (or None)
+    """
+    # handle mis-indented input from multi-line strings
+    code = dedent(code)
+
+    mod = ast.parse(code, filename=filename)
+    yield mod
+    if mod.body:
+        return compile(mod, filename, "exec", flags=flags)
+    return None
+
+
 def _last_assign_to_expr(mod: ast.Module):
     """
     Implementation of 'last_expr_or_assign' return_mode.
@@ -113,45 +134,35 @@ def _last_assign_to_expr(mod: ast.Module):
         mod.body.append(last_node)
 
 
-def _adjust_ast_to_store_result(self, target_name: str, mod: ast.Module) -> ast.Module:
-    """Add instruction to store result of expression into a variable with
-    name "target_name"
-    """
-    target = [ast.Name(target_name, ctx=ast.Store())]
-    # We directly wrap Expr or Await node in an Assign node.
+class EvalCodeResultException(Exception):
+    def __init__(self, v):
+        super().__init__(v)
+        self.value = v
+
+
+builtins.___EvalCodeResultException = EvalCodeResultException  # type: ignore
+
+_raise_template_ast = ast.parse("raise ___EvalCodeResultException(x)").body[0]
+
+
+def _last_expr_to_raise(mod: ast.Module):
     last_node = mod.body[-1]
-    if isinstance(last_node, (ast.Expr, ast.Await)):
-        mod.body.pop()
-        assign_rvalue = last_node.value
-    else:
-        # Remaining ast Nodes have no return value
-        # (not sure what other possibilities there are actually...)
-        assign_rvalue = ast.Constant(None, None)
-    mod.body.append(ast.Assign(target, assign_rvalue))
-    return mod
+    if not isinstance(mod.body[-1], (ast.Expr, ast.Await)):
+        return
+    raise_expr = deepcopy(_raise_template_ast)
+    raise_expr.exc.args[0] = last_node  # type: ignore
+    mod.body[-1] = raise_expr
 
 
 def parse_and_compile(
     source: str,
     filename="<exec>",
     return_mode: str = "last_expr",
-    return_target: str = "_",
     flags: int = 0x0,
-) -> CodeType:
-    """
-
-    Returns:
-    --------
-    code object
-        first part's code object (or None)
-    """
-    # handle mis-indented input from multi-line strings
-    source = dedent(source)
-
-    mod = ast.parse(source, filename=filename)
-    if not mod.body:
-        return None
-
+) -> Generator[ast.Module, None, CodeType]:
+    gen = parse_and_compile_inner(source, filename=filename, flags=flags)
+    mod = next(gen)
+    yield mod
     if return_mode == "last_expr_or_assign":
         # If the last statement is a named assignment, add an extra
         # expression to the end with just the L-value so that we can
@@ -159,21 +170,16 @@ def parse_and_compile(
         _last_assign_to_expr(mod)
 
     # we extract last expression
-    if return_mode.startswith(
-        "last_expr"
-    ) and isinstance(  # last_expr or last_expr_or_assign
-        mod.body[-1], (ast.Expr, ast.Await)
-    ):
-        _adjust_ast_to_store_result(return_target, mod)
-
-    # Update the line numbers shown in error messages.
-    ast.fix_missing_locations(mod)
-    # we compile
-    mod = compile(mod, filename, "exec", flags=flags)  # type: ignore
-    return mod
+    if return_mode.startswith("last_expr"):  # last_expr or last_expr_or_assign
+        _last_expr_to_raise(mod)
+    try:
+        gen.send(None)
+    except StopIteration as e:
+        return e.value
+    assert False
 
 
-def should_quiet(source : str) -> bool:
+def should_quiet(source: str) -> bool:
     """
     Should we suppress output?
 
@@ -205,15 +211,39 @@ def should_quiet(source : str) -> bool:
     return False
 
 
+def _eval_code_get_code(
+    source: str,
+    globals: Optional[Dict[str, Any]] = None,
+    locals: Optional[Dict[str, Any]] = None,
+    return_mode: str = "last_expr",
+    quiet_trailing_semicolon: bool = True,
+    filename: str = "<exec>",
+    flags: int = 0x0,
+) -> Any:
+    if quiet_trailing_semicolon and should_quiet(source):
+        return_mode = "none"
+    try:
+        gen = parse_and_compile(
+            source,
+            return_mode=return_mode,
+            flags=flags,
+            filename=filename,
+        )
+        next(gen)
+        next(gen)
+    except StopIteration as e:
+        return e.value
+    assert False
+
+
 def eval_code(
     source: str,
     globals: Optional[Dict[str, Any]] = None,
     locals: Optional[Dict[str, Any]] = None,
     return_mode: str = "last_expr",
-    return_target: str = "_",
     quiet_trailing_semicolon: bool = True,
     filename: str = "<exec>",
-    flags: int=0x0,
+    flags: int = 0x0,
 ) -> Any:
     """Runs a code string.
 
@@ -231,21 +261,26 @@ def eval_code(
     Use the ``return_mode`` and ``quiet_trailing_semicolon`` parameters in the
     constructor to modify this default behavior.
     """
-    return_target = "_"
-    if quiet_trailing_semicolon and should_quiet(source):
-        return_mode = None
-    mod = parse_and_compile(
+    code = _eval_code_get_code(
         source,
-        return_target=return_target,
+        globals=globals,
+        locals=locals,
         return_mode=return_mode,
-        flags=flags,
+        quiet_trailing_semicolon=quiet_trailing_semicolon,
         filename=filename,
+        flags=flags,
     )
-
-    if mod is None:
-        return None
-
-    return eval(mod, globals, locals)
+    if code is None:
+        return
+    try:
+        res = eval(code, globals, locals)
+        if res is not None:
+            raise RuntimeError(
+                "Used eval_code with TOP_LEVEL_AWAIT. Use eval_code_async for this instead."
+            )
+    except EvalCodeResultException as e:
+        # Final expression from code returns here
+        return e.value
 
 
 async def eval_code_async(
@@ -253,10 +288,9 @@ async def eval_code_async(
     globals: Optional[Dict[str, Any]] = None,
     locals: Optional[Dict[str, Any]] = None,
     return_mode: str = "last_expr",
-    return_target: str = "_",
     quiet_trailing_semicolon: bool = True,
     filename: str = "<exec>",
-    flags: int=0x0,
+    flags: int = 0x0,
 ) -> Any:
     """Runs a code string asynchronously.
 
@@ -278,20 +312,24 @@ async def eval_code_async(
     Use the ``return_mode`` and ``quiet_trailing_semicolon`` parameters in the
     constructor to modify this default behavior.
     """
-    flags = flags or ast.PyCF_ALLOW_TOP_LEVEL_AWAIT
-    res = eval_code(
+    flags = flags or ast.PyCF_ALLOW_TOP_LEVEL_AWAIT  # type: ignore
+    code = eval_code(
         source,
         globals=globals,
         locals=locals,
         return_mode=return_mode,
-        return_target=return_target,
         quiet_trailing_semicolon=quiet_trailing_semicolon,
         filename=filename,
         flags=flags,
     )
-    if iscoroutine(res):
-        res = await res
-    return res
+    if code is None:
+        return
+    try:
+        coroutine = eval(code, globals, locals)
+        if coroutine:
+            await coroutine
+    except EvalCodeResultException as e:
+        return e.value
 
 
 class CodeRunner:
