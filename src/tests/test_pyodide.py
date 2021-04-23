@@ -50,6 +50,7 @@ def test_code_runner():
 
 
 def test_eval_code():
+    eval_code("")
     ns = {}
     assert (
         eval_code(

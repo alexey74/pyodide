@@ -119,7 +119,8 @@ def _last_assign_to_expr(mod: ast.Module):
     """
     # Largely inspired from IPython:
     # https://github.com/ipython/ipython/blob/3587f5bb6c8570e7bbb06cf5f7e3bc9b9467355a/IPython/core/interactiveshell.py#L3229
-
+    if not mod.body:
+        return
     last_node = mod.body[-1]
 
     if isinstance(last_node, ast.Assign):
@@ -147,6 +148,8 @@ _raise_template_ast = ast.parse("raise ___EvalCodeResultException(x)").body[0]
 
 
 def _last_expr_to_raise(mod: ast.Module):
+    if not mod.body:
+        return
     last_node = mod.body[-1]
     if not isinstance(mod.body[-1], (ast.Expr, ast.Await)):
         return
