@@ -6,7 +6,6 @@ from textwrap import dedent
 sys.path.append(str(Path(__file__).parents[2] / "src" / "pyodide-py"))
 
 from pyodide import find_imports, eval_code  # noqa: E402
-from pyodide._base import CodeRunner  # noqa: E402
 
 
 def test_find_imports():
