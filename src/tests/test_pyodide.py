@@ -54,10 +54,10 @@ def test_eval_code():
     assert (
         eval_code(
             """
-        def f(x):
-            return 2*x + 5
-        f(77)
-    """,
+                def f(x):
+                    return 2*x + 5
+                f(77)
+            """,
             ns,
         )
         == 2 * 77 + 5
@@ -133,7 +133,7 @@ def test_eval_code_locals():
     eval_code("invalidate_caches()", globals, locals)
 
 
-def test_monkeypatch_eval_code(selenium):
+def test_monkeypatch_eval1_code(selenium):
     try:
         selenium.run(
             """

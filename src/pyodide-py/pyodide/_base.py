@@ -87,6 +87,9 @@ def open_url(url: str) -> StringIO:
     return StringIO(req.response)
 
 
+from pprintast import pprintast as ppast
+
+
 def parse_and_compile_inner(
     code: str, *, filename: str, flags: int = 0x0
 ) -> Generator[ast.Module, None, Optional[CodeType]]:
@@ -106,6 +109,7 @@ def parse_and_compile_inner(
     mod = ast.parse(code, filename=filename)
     yield mod
     if mod.body:
+        ast.fix_missing_locations(mod)
         return compile(mod, filename, "exec", flags=flags)
     return None
 
@@ -150,8 +154,14 @@ def _last_expr_to_raise(mod: ast.Module):
     if not isinstance(mod.body[-1], (ast.Expr, ast.Await)):
         return
     raise_expr = deepcopy(_raise_template_ast)
-    raise_expr.exc.args[0] = last_node  # type: ignore
+    print("\nlast_node")
+    ppast(last_node)
+
+    raise_expr.exc.args[0] = last_node.value  # type: ignore
+    ppast(mod)
+    ppast(raise_expr)
     mod.body[-1] = raise_expr
+    ppast(mod)
 
 
 def parse_and_compile(
@@ -163,12 +173,14 @@ def parse_and_compile(
     gen = parse_and_compile_inner(source, filename=filename, flags=flags)
     mod = next(gen)
     yield mod
+    ppast(mod)
     if return_mode == "last_expr_or_assign":
         # If the last statement is a named assignment, add an extra
         # expression to the end with just the L-value so that we can
         # handle it with the last_expr code.
         _last_assign_to_expr(mod)
 
+    print("\nsource:", source, "\n")
     # we extract last expression
     if return_mode.startswith("last_expr"):  # last_expr or last_expr_or_assign
         _last_expr_to_raise(mod)
