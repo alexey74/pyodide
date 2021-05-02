@@ -13,6 +13,35 @@ _Py_IDENTIFIER(result);
 _Py_IDENTIFIER(ensure_future);
 _Py_IDENTIFIER(add_done_callback);
 
+// Use raw EM_JS here, we intend to raise fatal error if called on bad input.
+EM_JS(void, pyproxy_destroy_and_decref, (JsRef x), {
+  let val = Module.hiwire.pop_value(x);
+  if (Module.isPyProxy(val)) {
+    Module.pyproxy_destroy(val);
+  }
+})
+
+// Use raw EM_JS here, we intend to raise fatal error if called on bad input.
+EM_JS(int, pyproxy_Check, (JsRef x), {
+  if (x == 0) {
+    return false;
+  }
+  let val = Module.hiwire.get_value(x);
+  return Module.isPyProxy(val);
+});
+
+EM_JS(int, pyproxy_mark_borrowed, (JsRef id), {
+  let proxy = Module.hiwire.get_value(id);
+  Module.pyproxy_mark_borrowed(proxy);
+});
+
+EM_JS(int, pyproxies_mark_borrowed, (JsRef id), {
+  let array = Module.hiwire.get_value(id);
+  for (let proxy of array) {
+    Module.pyproxy_mark_borrowed(proxy);
+  }
+});
+
 static PyObject* asyncio;
 
 // Flags controlling presence or absence of many small mixins depending on which
@@ -191,24 +220,73 @@ finally:
   return result;
 }
 
+/* Specialized version of _PyObject_GenericGetAttrWithDict
+   specifically for the LOAD_METHOD opcode.
+
+   Return 1 if a method is found, 0 if it's a regular attribute
+   from __dict__ or something returned by using a descriptor
+   protocol.
+
+   `method` will point to the resolved attribute or NULL.  In the
+   latter case, an error will be set.
+*/
+int
+_PyObject_GetMethod(PyObject* obj, PyObject* name, PyObject** method);
+
+EM_JS(JsRef, proxy_cache_get, (JsRef proxyCacheId, PyObject* descr), {
+  let proxyCache = Module.hiwire.get_value(proxyCacheId);
+  return proxyCache.get(descr);
+})
+
+EM_JS(void,
+      proxy_cache_set,
+      (JsRef proxyCacheId, PyObject* descr, JsRef proxy),
+      {
+        let proxyCache = Module.hiwire.get_value(proxyCacheId);
+        proxyCache.set(descr, proxy);
+      })
+
 JsRef
-_pyproxy_getattr(PyObject* pyobj, JsRef idkey)
+_pyproxy_getattr(PyObject* pyobj, JsRef idkey, JsRef proxyCache)
 {
   bool success = false;
   PyObject* pykey = NULL;
+  PyObject* pydescr = NULL;
   PyObject* pyresult = NULL;
   JsRef idresult = NULL;
 
   pykey = js2python(idkey);
   FAIL_IF_NULL(pykey);
-  pyresult = PyObject_GetAttr(pyobj, pykey);
-  FAIL_IF_NULL(pyresult);
+  int is_method = _PyObject_GetMethod(pyobj, pykey, &pydescr);
+  FAIL_IF_NULL(pydescr);
+  JsRef cached_proxy = proxy_cache_get(proxyCache, pydescr); /* borrowed */
+  if (cached_proxy) {
+    idresult = hiwire_incref(cached_proxy);
+    goto success;
+  }
+  if (PyErr_Occurred()) {
+    FAIL();
+  }
+  if (is_method) {
+    pyresult =
+      Py_TYPE(pydescr)->tp_descr_get(pydescr, pyobj, (PyObject*)pyobj->ob_type);
+    FAIL_IF_NULL(pyresult);
+  } else {
+    pyresult = pydescr;
+    Py_INCREF(pydescr);
+  }
   idresult = python2js(pyresult);
   FAIL_IF_NULL(idresult);
+  if (pyproxy_Check(idresult)) {
+    proxy_cache_set(proxyCache, pydescr, hiwire_incref(idresult));
+    pyproxy_mark_borrowed(idresult);
+  }
 
+success:
   success = true;
 finally:
   Py_CLEAR(pykey);
+  Py_CLEAR(pydescr);
   Py_CLEAR(pyresult);
   if (!success) {
     if (PyErr_ExceptionMatches(PyExc_AttributeError)) {
@@ -352,7 +430,7 @@ _pyproxy_ownKeys(PyObject* pyobj)
   FAIL_IF_MINUS_ONE(n);
   for (Py_ssize_t i = 0; i < n; ++i) {
     PyObject* pyentry = PyList_GetItem(pydir, i); /* borrowed */
-    identry = python2js(pyentry);
+    identry = python2js_track_proxies(pyentry, NULL);
     FAIL_IF_NULL(identry);
     FAIL_IF_MINUS_ONE(JsArray_Push(iddir, identry));
     hiwire_CLEAR(identry);

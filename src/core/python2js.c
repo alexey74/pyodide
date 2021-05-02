@@ -410,6 +410,20 @@ finally:
   return NULL;
 }
 
+EM_JS_NUM(errcode, destroy_proxies, (JsRef proxies_id), {
+  let proxies = Module.hiwire.pop_value(proxies_id);
+  for (let px of proxies) {
+    Module.pyproxy_destroy(px);
+  }
+});
+
+EM_JS_NUM(errcode, proxies_mark_borrowed, (JsRef proxies_id), {
+  let proxies = Module.hiwire.get_value(proxies_id);
+  for (let px of proxies) {
+    Module.mark_borrowed(px);
+  }
+});
+
 /**
  * Do a shallow conversion from python2js. Convert immutable types with
  * equivalent Javascript immutable types.

@@ -86,8 +86,9 @@ JS_FILE(pyproxy_init_js, () => {
     } else {
       target = Object.create(cls.prototype);
     }
+    let cacheId = Module.hiwire.new_value(new Map());
     Object.defineProperty(target, "$$", {
-      value: { ptr: ptrobj, type: "PyProxy" },
+      value: { ptr: ptrobj, type: "PyProxy", borrowed: false, cacheId },
     });
     _Py_IncRef(ptrobj);
     let proxy = new Proxy(target, Module.PyProxyHandlers);
@@ -144,6 +145,27 @@ JS_FILE(pyproxy_init_js, () => {
 
   // Static methods
   Module.PyProxy_getPtr = _getPtr;
+  Module.pyproxy_mark_borrowed = function (proxy) {
+    proxy.$$.borrowed = true;
+  };
+  Module.pyproxy_destroy = function (proxy, destroyed_msg) {
+    let ptrobj = _getPtr(proxy);
+    Module.finalizationRegistry.unregister(proxy);
+    // Maybe the destructor will call Javascript code that will somehow try
+    // to use this proxy. Mark it deleted before decrementing reference count
+    // just in case!
+    proxy.$$.ptr = null;
+    proxy.$$.destroyed_msg = destroyed_msg;
+    let cache = Module.hiwire.pop_value(proxy.$$.cacheId);
+    for (let proxy_id of cache.values()) {
+      Module.pyproxy_destroy(Module.hiwire.pop_value(proxy_id));
+    }
+    try {
+      _Py_DecRef(ptrobj);
+    } catch (e) {
+      Module.fatal_error(e);
+    }
+  };
 
   // Now a lot of boilerplate to wrap the abstract Object protocol wrappers
   // defined in pyproxy.c in Javascript functions.
@@ -240,17 +262,8 @@ JS_FILE(pyproxy_init_js, () => {
      *        destroyed".
      */
     destroy(destroyed_msg) {
-      let ptrobj = _getPtr(this);
-      Module.finalizationRegistry.unregister(this);
-      // Maybe the destructor will call Javascript code that will somehow try
-      // to use this proxy. Mark it deleted before decrementing reference count
-      // just in case!
-      this.$$.ptr = null;
-      this.$$.destroyed_msg = destroyed_msg;
-      try {
-        _Py_DecRef(ptrobj);
-      } catch (e) {
-        Module.fatal_error(e);
+      if (!this.$$.borrowed) {
+        Module.pyproxy_destroy(this, destroyed_msg);
       }
     }
     /**
@@ -272,16 +285,16 @@ JS_FILE(pyproxy_init_js, () => {
      * Defaults to infinite.
      * @returns The Javascript object resulting from the conversion.
      */
-    toJs(depth = -1) {
+    toJs({ max_depth = -1, proxies }) {
       let ptrobj = _getPtr(this);
       let idresult;
-      let proxies = Module.hiwire.new_value([]);
+      let idproxies = proxies ? Module.hiwire.new_value(proxies) : 0;
       try {
-        idresult = _python2js_with_depth(ptrobj, depth, proxies);
+        idresult = _python2js_with_depth(ptrobj, max_depth, idproxies);
       } catch (e) {
         Module.fatal_error(e);
       } finally {
-        Module.hiwire.decref(proxies);
+        Module.hiwire.decref(idproxies);
       }
       if (idresult === 0) {
         _pythonexc2js();
@@ -605,8 +618,9 @@ JS_FILE(pyproxy_init_js, () => {
     let ptrobj = _getPtr(jsobj);
     let idkey = Module.hiwire.new_value(jskey);
     let idresult;
+    let cacheId = jsobj.$$.cacheId;
     try {
-      idresult = __pyproxy_getattr(ptrobj, idkey);
+      idresult = __pyproxy_getattr(ptrobj, idkey, cacheId);
     } catch (e) {
       Module.fatal_error(e);
     } finally {
