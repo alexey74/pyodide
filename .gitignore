@@ -24,3 +24,6 @@ geckodriver.log
 node_modules/
 packages/.artifacts
 packages/*/build.log
+/.project
+/.pydevproject
+/.settings/

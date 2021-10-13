@@ -24,9 +24,9 @@
               r = conn.getresponse()
               from js import main_window
               res_elt = await main_window.document.querySelector("#result");
-              old_content = await res_elt.innerText
+              #old_content = await res_elt.innerText
               res = r.read()
-              await main_window.setInnerText(res_elt, old_content * 5 + "\\n\\n" +  res[:100])
+              await main_window.setInnerText(res_elt,  res[:100])
           `)
       }
       main();

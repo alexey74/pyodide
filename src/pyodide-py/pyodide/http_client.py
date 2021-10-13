@@ -1,7 +1,7 @@
+import email.message
+import io
 import re
 import socket
-import io
-import email.message
 
 
 _UNKNOWN = "UNKNOWN"
@@ -109,15 +109,25 @@ class HTTPResponse(io.BufferedIOBase):
         if jsresponse is None:
             raise Exception("oops")
         self.jsresponse = jsresponse
-        print(jsresponse)
+        # print(jsresponse)
         status_req = jsresponse.status.schedule_sync()
+        print("status")
         reason_req = jsresponse.statusText.schedule_sync()
+        print("reason")
+
         headers_req = jsresponse.headers.schedule_sync()
+        print("hdr")
+
         self.code = self.status = status_req.syncify()
-        self.reason = reason_req.syncify()
+        print("status", self.code)
+
+        self.reason = ""  # reason_req.syncify()
+        # print("reason", self.reason)
+
         self.headers = HTTPMessage()
         for header in headers_req.syncify():
             self.headers.set_raw(*header)
+        print("headers:", self.headers)
 
     def begin(self):
         pass
@@ -339,6 +349,8 @@ class HTTPConnection:
 
         url = url or "/"
         self._validate_path(url)
+        if url[0] == "/":
+            url = url[1:]
         self.url = f"{self.proto}://{self.host}:{self.port}/{url}"
 
     def _validate_path(self, url):
@@ -373,7 +385,7 @@ class HTTPConnection:
                 raise ValueError("Invalid header value %r" % (values[i],))
 
         value = b"\r\n\t".join(values)
-        self._headers.append(header, value)
+        self._headers.append(header.decode(), value.decode())
 
     def endheaders(self, message_body=None, *, encode_chunked=False):
         """Indicate that the last header line has been sent to the server.
@@ -391,8 +403,10 @@ class HTTPConnection:
 
         options = Object.new()
         options.method = self._method
-        options.body = message_body
+        if message_body is not None:
+            options.body = message_body.decode()
         options.headers = getattr(Array, "from")(self._headers)
+        options.credentials = "include"
         self._fetch = main_window.fetch(self.url, options).schedule_sync()
 
     def request(self, method, url, body=None, headers={}, *, encode_chunked=False):
@@ -514,8 +528,7 @@ class HTTPConnection:
             raise ResponseNotReady(self.__state)
 
         jsresponse = self._fetch.syncify()
-        print(jsresponse)
-
+        print("fetched resp:", jsresponse)
         if self.debuglevel > 0:
             response = self.response_class(
                 self.sock, self.debuglevel, method=self._method, jsresponse=jsresponse
@@ -524,7 +537,7 @@ class HTTPConnection:
             response = self.response_class(
                 self.sock, method=self._method, jsresponse=jsresponse
             )
-
+        print("constructed resp:", response)
         try:
             try:
                 response.begin()
@@ -541,6 +554,7 @@ class HTTPConnection:
                 # remember this, so we can tell when it is complete
                 self.__response = response
 
+            print("resp:", response)
             return response
         except:
             response.close()
