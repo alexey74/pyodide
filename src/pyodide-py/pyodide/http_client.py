@@ -107,27 +107,22 @@ class HTTPResponse(io.BufferedIOBase):
         self.length = _UNKNOWN  # number of bytes left in response
         self.will_close = True  # conn will close at end of response
         if jsresponse is None:
-            raise Exception("oops")
+            raise RuntimeError("Null JS response")
         self.jsresponse = jsresponse
-        # print(jsresponse)
+        if self.debuglevel:
+            print("JS Response:", jsresponse)
         status_req = jsresponse.status.schedule_sync()
-        print("status")
         reason_req = jsresponse.statusText.schedule_sync()
-        print("reason")
-
         headers_req = jsresponse.headers.schedule_sync()
-        print("hdr")
 
         self.code = self.status = status_req.syncify()
-        print("status", self.code)
 
+        # FIXME: hangs
         self.reason = ""  # reason_req.syncify()
-        # print("reason", self.reason)
 
         self.headers = HTTPMessage()
         for header in headers_req.syncify():
             self.headers.set_raw(*header)
-        print("headers:", self.headers)
 
     def begin(self):
         pass
