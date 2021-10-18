@@ -2,6 +2,10 @@ stages:
   - build
 
 build:
+  image: docker:git
+  services:
+  - docker:dind
+
   stage: build
   script:
     - ./run_docker --pre-built make
