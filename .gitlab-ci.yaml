@@ -1,0 +1,10 @@
+stages:
+  - build
+
+build:
+  stage: build
+  script:
+    - ./run_docker --pre-built make
+  artifacts:
+  - comlink/dist
+  - build
