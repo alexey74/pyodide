@@ -34,6 +34,16 @@ jobs:
           build-args: |
             VERSION=${{ github.event.inputs.version }}
           tags: "iodide/pyodide:${{ github.event.inputs.version }}"
+
+      - name: 'Tar files'
+        run: make demo-syncio-tars
+
+      - name: Archive production artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: dist-without-markdown
+          path: |
+            demos/syncio/*.tgz
       -
         name: Image digest
         run: echo ${{ steps.docker_build.outputs.digest }}

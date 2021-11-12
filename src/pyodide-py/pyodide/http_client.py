@@ -24,17 +24,17 @@ _METHODS_EXPECTING_BODY = {"PATCH", "POST", "PUT"}
 
 def _encode(data, name="data"):
     """Call data.encode("latin-1") but show a better error message."""
+
     try:
-        return data.encode("latin-1")
+        return data.encode("utf-8", errors="ignore")
     except UnicodeEncodeError as err:
         raise UnicodeEncodeError(
             err.encoding,
             err.object,
             err.start,
             err.end,
-            "%s (%.20r) is not valid Latin-1. Use %s.encode('utf-8') "
-            "if you want to send it encoded in UTF-8."
-            % (name.title(), data[err.start : err.end], name),
+            "%s (%.20r) is not valid UTF-8."
+            % (name.title(), data[err.start : err.end]),
         ) from None
 
 
@@ -394,12 +394,12 @@ class HTTPConnection:
         else:
             raise CannotSendHeader()
         from js import main_window
-        from js import Object, Array
+        from js import Object, Array, Blob
 
         options = Object.new()
         options.method = self._method
         if message_body is not None:
-            options.body = message_body.decode()
+            options.body = message_body.decode("utf-8", errors="ignore")
         options.headers = getattr(Array, "from")(self._headers)
         options.credentials = "include"
         self._fetch = main_window.fetch(self.url, options).schedule_sync()

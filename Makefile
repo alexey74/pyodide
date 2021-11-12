@@ -189,3 +189,10 @@ debug :
 	EXTRA_CFLAGS+=" -D DEBUG_F" \
 	PYODIDE_PACKAGES+=", micropip, pyparsing, pytz, packaging, kiwisolver, " \
 	make
+
+demo-syncio-tars:
+	           tar -C demos/syncio -zchvf pyodide.tgz pyodide && \
+           cd comlink && ln -s dist comlink && \
+           tar -zchvf ../comlink.tgz comlink && \
+           rm -f comlink && \
+           cd ..

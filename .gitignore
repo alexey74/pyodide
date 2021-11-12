@@ -27,3 +27,5 @@ packages/*/build.log
 /.project
 /.pydevproject
 /.settings/
+/comlink.tgz
+/pyodide.tgz
