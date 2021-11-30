@@ -393,13 +393,34 @@ class HTTPConnection:
             self.__state = _CS_REQ_SENT
         else:
             raise CannotSendHeader()
-        from js import main_window
-        from js import Object, Array, Blob
+
+        from js import main_window  # pylint: disable=import-error
+        from js import (
+            Object,
+            Array,
+            Map,
+            URLSearchParams,
+        )  # pylint: disable=import-error
+        from pyodide import to_js
 
         options = Object.new()
         options.method = self._method
-        if message_body is not None:
+        if isinstance(message_body, bytes):
             options.body = message_body.decode("utf-8", errors="ignore")
+        elif isinstance(message_body, dict):  # urlencoded
+            # see https://stackoverflow.com/questions/35325370/how-do-i-post-a-x-www-form-urlencoded-request-using-fetch
+            # m = Map.new()
+            # for k, v in message_body.items():
+            #     print("POST urlenc body:", k, "=", v)
+            #     m.set(k, v)
+            # options.body = URLSearchParams.new(to_js(m))
+            from urllib.parse import urlencode
+
+            options.body = urlencode(message_body)
+            self._headers.set(
+                "Content-Type", "application/x-www-form-urlencoded;charset=UTF-8"
+            )
+            print("POST urlenc body:", options.body)
         options.headers = getattr(Array, "from")(self._headers)
         options.credentials = "include"
         self._fetch = main_window.fetch(self.url, options).schedule_sync()

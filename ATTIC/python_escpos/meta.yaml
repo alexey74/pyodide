@@ -1,0 +1,24 @@
+package:
+  name: python_escpos
+  version: 3.0a9
+
+source:
+  #url: https://github.com/python-escpos/python-escpos.git
+  path: /git/python-escpos
+
+#  extras:
+#  -
+#      - setup.cfg
+#      - ./setup.cfg
+
+build:
+  post: |
+    cp  --dereference $PKGDIR/capabilities.json $SITEPACKAGES/escpos/
+
+requirements:
+  run:
+    - pillow
+
+test:
+  imports:
+    - escpos.printer

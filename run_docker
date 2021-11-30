@@ -108,6 +108,7 @@ CONTAINER=$(\
   docker run \
     -d --rm \
     -v $PWD:/src \
+    -v $PWD/..:/git \
     --user root \
     --shm-size 2g \
     "${PYODIDE_DOCKER_IMAGE}" \
