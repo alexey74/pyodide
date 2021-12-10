@@ -49,6 +49,7 @@
     "typescript": "^3.9.3"
   },
   "dependencies": {
-    "comlink": "^4.3.1"
+    "comlink": "^4.3.1",
+    "tsc": "^2.0.3"
   }
 }

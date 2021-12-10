@@ -143,7 +143,7 @@ export class ComlinkTask {
     let taskId = this.taskId;
     // Ensure status is cleared. We will notify
     let data_buffer = acquireDataBuffer(UUID_LENGTH);
-    console.log("===requesting", taskId);
+    console.debug("===requesting", taskId);
     endpoint.postMessage(
       { ...msg, size_buffer, data_buffer, signal_buffer, taskId, syncify: true },
       transfers
@@ -156,12 +156,12 @@ export class ComlinkTask {
       releaseDataBuffer(data_buffer);
       const size = Atomics.load(size_buffer, SZ_BUF_SIZE_IDX);
       data_buffer = acquireDataBuffer(size);
-      console.log("===bigger data buffer", taskId);
+      console.debug("===bigger data buffer", taskId);
       endpoint.postMessage({ id, data_buffer });
       yield;
     }
     const size = Atomics.load(size_buffer, SZ_BUF_SIZE_IDX);
-    console.log("===completing", taskId);
+    console.debug("===completing", taskId);
     return JSON.parse(decoder.decode(data_buffer.slice(0, size)));
   }
 
@@ -227,13 +227,13 @@ export async function syncResponse(
 ) {
   try {
     let { size_buffer, data_buffer, signal_buffer, taskId } = msg;
-    console.warn(msg);
+    console.debug('== msg:', msg);
     let bytes = encoder.encode(JSON.stringify(returnValue));
     let fits = bytes.length <= data_buffer.length;
     Atomics.store(size_buffer, SZ_BUF_SIZE_IDX, bytes.length);
     Atomics.store(size_buffer, SZ_BUF_FITS_IDX, +fits);
     if (!fits) {
-      console.log("      need larger buffer", taskId)
+      console.debug("      need larger buffer", taskId)
       // Request larger buffer
       let [uuid, data_promise] = requestResponseMessageInner(endpoint);
       // Write UUID into data_buffer so syncRequest knows where to respond to.
@@ -246,7 +246,7 @@ export async function syncResponse(
     data_buffer.set(bytes);
     Atomics.store(size_buffer, SZ_BUF_FITS_IDX, +true);
     // @ts-ignore
-    console.log("       signaling completion", taskId)
+    console.debug("       signaling completion", taskId)
     await signalRequester(signal_buffer, taskId);
   } catch (e) {
     console.warn(e);
@@ -348,7 +348,7 @@ class _Syncifier {
         throw new Error(`Assertion error: unknown taskId ${wokenTaskId}.`);
       }
       if (wokenTask!.poll()) {
-        console.log("completed task ", wokenTaskId, wokenTask, wokenTask._result);
+        console.debug("completed task ", wokenTaskId, wokenTask); //, wokenTask._result);
         this.tasks.delete(wokenTaskId);
         if (wokenTask === task) {
           result = true;
