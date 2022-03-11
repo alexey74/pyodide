@@ -1,0 +1,9 @@
+package:
+  name: python-Levenshtein
+  version: 1.0.2
+source:
+  # sha256:
+  url: https://github.com/USGM/python-Levenshtein/archive/refs/tags/v0.1.0.tar.gz
+test:
+  imports:
+  - Levenshtein
