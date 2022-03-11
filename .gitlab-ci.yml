@@ -5,8 +5,9 @@ build:
   image: docker:git
   services:
   - docker:dind
-
   stage: build
+  before_script:
+    - apk add bash
   script:
     - ./run_docker --pre-built make
   artifacts:
